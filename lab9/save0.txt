@@ -1,0 +1,490 @@
+#%% md
+
+# Анализ данных осень 2021
+# Практический анализ данных и ML соревнования
+
+#%% md
+
+### Зачем участвтовать
+
+#%% md
+
+- Полезно для резюме
+- Полезно для скорости работы
+- Иногда прибыльно
+- Полезно для навыков, если вы не kaggle expert
+
+#%% md
+
+### Чему научили за курс
+
+#%% md
+
+- Быть линтером питона
+- Перекладывать одни колонки данных в другие
+    
+    выделять признаки в данных, но не ясно какие из них полезны. И для чего полезны
+    
+- Применять непонятные ML модели к сырым данным
+
+    алгоритмы AutoML делают похожую работу, но подбирают нужные параметры быстрее программистов
+    
+- Выделять на графиках закономерности, которые понятны без графиков
+
+    сложно найти что-то в данных без цели. Проще предполагать по данным что может быть правдой, а что нет
+
+#%% md
+
+Вопросы без ответа
+
+- Что считать хорошим анализом данных
+- Что делать с плохим количеством данных
+- Как смотреть на данные
+
+#%% md
+
+## Пример с соревнования
+
+#%% md
+
+Возьмём задачу из VK Cup 2020 года. Нужно:
+
+- разобраться в данных, похожих на логи рекламных компаний соцсети
+- придумать алгоритм оценки охвата аудитории
+- посмотреть насколько точно предсказывается размер аудитории
+
+#%% md
+
+**Будет много графиков**
+
+#%% md
+
+#### Данные
+
+#%%
+
+!tree data/raw
+
+#%% md
+
+`users.tsv` - данные об аудитории == пользователях соцсети:
+- `user_id`, `sex`, `age`, `city_id`
+
+`history.tsv` - данные о рекламных компаниях:
+- `hour` – в какой час пользователь видел объявление
+- `cpm` - цена показанного рекламного объявления в рекламном аукционе. Это значит, что на данном аукционе это была максимальная ставка. 
+- `publisher` - площадка, на который пользователь видел рекламу
+- `user_id`
+
+`validate_answers.tsv` - данные об охвате аудитории рекламной компании:
+- `at_least_one` - доля пользователей, которая увидит объявление **хотя бы 1 раз**
+- `at_least_two` - доля пользователей, которая увидит объявление **хотя бы 2 раза**
+- `at_least_three` - доля пользователей, которая увидит объявление **хотя бы 3 раза**
+
+#%% md
+
+### Разберёмся в данных
+
+#%%
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+plt.rcParams['figure.figsize'] = [14, 3]
+
+#%% md
+
+#### О пользователях
+
+#%%
+
+users = pd.read_csv('data/raw/users.csv')
+print(f'dataset shape: {users.shape}')
+users.head(7)
+
+#%%
+
+# Пользователи с какими id есть в данных?
+
+users.user_id.hist(bins=100, rwidth=0.9)
+
+#%%
+
+# Пол пользователей
+
+users.sex.hist(figsize=(3, 2))
+
+#%%
+
+# Возраст
+
+users.age.hist(bins=100)
+
+#%%
+
+# Возраст основной аудитории
+
+users[(users.age > 0) & (users.age < 60)].age.hist(bins=100)
+
+#%%
+
+# Города пользователей
+
+print(f'Количество городов: {len(users.city_id.unique())}')
+# Сколько пользователей в каждом городе
+vc = users.value_counts('city_id')
+vc.hist(bins=50)
+
+#%%
+
+# Логарифмированное количество жителей городов
+log2_vc = np.log2(vc)
+log2_vc.hist(bins=50)
+
+#%% md
+
+##### Менее тривиальные графики
+
+#%%
+
+# Города с населением более 1к
+vc[vc > 1000].hist(bins=50)
+
+#%%
+
+# Исследуем жителей больших городов
+vc[vc > 1000]
+
+#%%
+
+cities_users = users[users.city_id.isin([0, 3, 7])]
+cities_users.shape
+
+#%%
+
+# Их возраст по городам
+
+city_ages = cities_users[(cities_users.age > 0) & (cities_users.age < 70)].groupby('city_id').age.apply(list)
+
+plt.figure(figsize=(7, 7))
+plt.boxplot(city_ages)
+plt.grid(True)
+plt.legend([f'город {city_id}' for city_id in city_ages.index])
+plt.show()
+
+#%% md
+
+#### О рекламных компаниях
+
+#%%
+
+history = pd.read_csv('data/raw/history.csv')
+print(history.shape)
+history.head(7)
+
+#%%
+
+# Время объявлений в ходе всего периода сбора данных
+history.hour.hist(bins=200, figsize=(18, 4))
+
+#%%
+
+# Подробнее
+history[history.hour < 150].hour.hist(bins=400, figsize=(18, 4))
+
+#%%
+
+# Цены объявлений
+history.cpm.hist(bins=50)
+
+#%%
+
+# Логарифмированные
+cpms = history.cpm.apply(np.log2)
+cpms.hist(bins=100)
+
+#%%
+
+# Подробнее 
+cpms[(cpms > 5) & (cpms < 10)].hist(bins=100)
+
+#%%
+
+# Что за платформы для рекламы? Сколько их?
+
+print(len(history.publisher.unique()))
+vc = history.publisher.value_counts()
+vc.hist(bins=50)
+plt.xlabel('Количество объявлений')
+plt.ylabel('Количество таких платформ')
+
+#%%
+
+# Сколько уникальных пользователей на платформах?
+
+history.groupby('publisher').user_id.apply(lambda users: len(set(users))).hist(bins=50)
+plt.xlabel('Количество пользователей')
+plt.ylabel('Количество платформ')
+
+#%%
+
+# Какой трафик на каждой платформе?
+
+# Посчитаем для каждого часа: сколько постов было на каждой платформе?
+
+n_publishers = len(history.publisher.unique())
+posts_per_hour_by_publishers = []
+TAKE_FIRST_N_HOURS = 24 * 4
+
+for hour, hour_data in history[history.hour < TAKE_FIRST_N_HOURS].groupby('hour'):
+    publishers_posts = hour_data.value_counts('publisher')
+    
+    counts = [0 for _ in range(n_publishers)]
+    for pub_id, posts_n in list(publishers_posts.items()):
+        counts[pub_id-1] = posts_n
+        
+    posts_per_hour_by_publishers.append([hour] + counts)
+
+    
+df = pd.DataFrame.from_records(posts_per_hour_by_publishers, columns=['hour'] + list(history.publisher.unique()))
+df.head()
+
+#%%
+
+df.plot.bar(x='hour', stacked=True, figsize=(20, 10))
+plt.xlabel('Час')
+plt.ylabel('Количество постов')
+
+#%%
+
+# И сколько постов посмотрел каждый пользователь?
+vc = history.value_counts('user_id')
+vc.hist(bins=50)
+
+#%%
+
+# Логарифмируем
+np.log2(vc).hist(bins=50)
+plt.xlabel('log2(просмотрено постов пользователем)')
+plt.ylabel('Количество таких пользователей')
+
+#%% md
+
+#### Об результате рекламных компаний
+
+#%%
+
+posts = pd.read_csv('data/raw/ads.csv', converters={"user_ids": lambda x: list(map(int, x.split(",")))})
+
+#%%
+
+# Сколько по итогам аукциона стоит объявление
+posts.cpm.hist(bins=100)
+
+#%%
+
+# Сколько часов длится рекламная компания
+
+duration = (posts.hour_end - posts.hour_start)
+duration.hist(bins=50)
+
+#%%
+
+np.log2(duration).hist(bins=50)
+plt.xlabel('log(длительность в часах)')
+plt.ylabel('количество объявлений')
+
+#%%
+
+# На какую аудиторию крутилось объявление
+
+posts.audience_size.hist(bins=100)
+
+#%% md
+
+#### Об охвате
+
+#%%
+
+answers = pd.read_csv('data/raw/target.csv')
+answers.head(7)
+
+#%%
+
+# Какая часть аудитории увидело объявление хоть раз
+answers.at_least_one.hist(bins=50)
+
+#%% md
+
+Если у вас нет непонимания и вопросов о данных, то вы посмотрели хороший анализ данных. Возможно выше неплохой анализ
+
+#%% md
+
+### Построим модель
+
+#%% md
+
+#### Выделим числовые признаки
+
+#%%
+
+import seaborn as sns
+
+#%%
+
+# Соберём простую информацию по каждому объявлению в датасет
+
+# Добавим номер объявления
+posts = posts.assign(id=posts.index)
+answers = answers.assign(id=answers.index)
+
+
+ads = pd.merge(posts, answers, on='id')
+ads.head(3)
+
+#%%
+
+# Добавим пару простых признаков
+
+ads = ads.assign(n_publishers=ads.publishers.apply(lambda s: len(s.split(','))),
+                 duration=ads.hour_end - ads.hour_start)
+
+def cnt_sex1(arr) :
+    cnt = 0
+    for i in arr :
+        if users[users['user_id'] == i].iloc[0]['sex'] == 1 :
+            cnt += 1
+    return cnt
+
+ads = ads.assign(sex1=ads.user_ids.apply(cnt_sex1))
+
+useful_columns = [
+ 'cpm',
+ 'duration',
+ 'n_publishers',
+ 'audience_size',
+ 'at_least_one',
+ 'sex1'
+]
+
+ads = ads[useful_columns]
+ads.head(5)
+
+#%%
+
+def heatmap(data: pd.DataFrame):
+    plt.figure(figsize=(10, 9))
+    sns.heatmap(data.corr(), square=True, linecolor='white', annot=True)
+    plt.yticks(rotation=30)
+    plt.xticks(rotation=30)
+    plt.show()
+
+#%%
+
+plt.figure(figsize=(10, 9))
+heatmap(ads)
+
+#%%
+
+# Добавим дата саенс
+ads_featured = ads.assign(
+                          dur_x_audience=ads.duration*ads.audience_size,
+                          log_dur_x_audience=np.log(ads.duration*ads.audience_size),
+                          cpm_x_duration=ads.cpm*ads.duration
+                         )
+heatmap(ads_featured)
+
+#%% md
+
+#### Обучим линейную регрессию
+
+#%%
+
+from typing import Tuple
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+
+#%%
+
+def make_xy(data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
+    x = data.drop('at_least_one', axis=1)
+    y = data['at_least_one']
+    return x, y
+
+#%%
+
+def mape(pred: np.ndarray, trueth: np.ndarray) -> np.ndarray:
+    # mean_absolute_percentage_error with clipping huge values
+    err = np.array(abs(pred - trueth) / trueth)
+    err[err > 20] = 20 # clip 2000% error
+    return err
+
+#%%
+
+train, test = train_test_split(ads, 
+                               test_size=0.2, 
+                               random_state=42)
+# train, test = train_test_split(ads.assign(
+#                                           dur_x_audience=ads.duration*ads.audience_size,
+#                                           log_dur_x_audience=np.log(ads.duration*ads.audience_size),
+#                                           cpm_x_duration=ads.cpm*ads.duration
+#                                          ),
+#                                test_size=0.2, 
+#                                random_state=42)
+
+# Обучим модель
+x, y = make_xy(train)
+model = LinearRegression().fit(x, y)
+
+# Оценим ошибку
+errors = mape(model.predict(x), y)
+plt.hist(errors, bins=100)
+plt.show()
+print('Ошибка на train:', (errors).mean())
+
+# Оценим ошибку на тесте
+x, y = make_xy(test)
+errors = mape(model.predict(x), y)
+plt.hist(errors, bins=100)
+print('Ошибка на test:', (model.predict(x) - y).mean())
+
+#%%
+
+
+
+#%% md
+
+### Насколько вообще разделимы данные?
+
+#%%
+
+import umap
+
+#%%
+
+# Покажем похожие объявления точками, а охват цветом
+embedding = umap.UMAP().fit_transform(ads[['cpm', 'duration', 'n_publishers']])
+
+plt.figure(figsize=(6, 5), dpi=150)
+
+color = np.log1p(ads.at_least_one * 100)
+plt.scatter(embedding[:, 0], embedding[:, 1], s=13, c=color)
+
+#%%
+
+# Покажем похожие объявления точками, а охват цветом. Но на данных с доп фичами
+embedding = umap.UMAP().fit_transform(ads_featured[['cpm', 'duration', 'n_publishers', 'dur_x_audience', 'log_dur_x_audience', 'cpm_x_duration']])
+
+plt.figure(figsize=(6, 5), dpi=150)
+
+color = np.log1p(ads.at_least_one * 100)
+plt.scatter(embedding[:, 0], embedding[:, 1], s=13, c=color)
+
+#%% md
+
+## Конец первой части курса
+
+#%%
+
+
